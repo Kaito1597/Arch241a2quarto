@@ -1,0 +1,335 @@
+---
+title: "Assignment #2 — Statistical analysis of thermal comfort research"
+author: "Kaito Funada"
+date: 9/27/2026
+format:
+  html:
+    toc: true
+    code-fold: show
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+<!--
+HOW TO USE THIS FILE
+1. Click "Render" in RStudio (or run: quarto render analysis.qmd).
+   If it renders before you change anything, your setup works.
+2. Answer the eight questions below. Replace every [WRITE ...] prompt.
+3. Every number in your text must come from a code chunk, not from
+   typing it in by hand. That is the whole point of Quarto.
+4. Render one more time before you submit, from a fresh R session
+   (Session > Restart R). If it only renders in your current session,
+   it is not reproducible.
+-->
+
+```{r setup}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+theme_set(theme_minimal(base_size = 12))
+
+load("data/arch241a2.rda")
+d <- arch241a2
+```
+
+## About this dataset — read before you start
+
+Thirty subjects each sat through seven conditions in a climate chamber in
+Guangzhou, giving 30 × 7 = 210 rows.
+
+| Variable | Meaning | Notes |
+|---|---|---|
+| `Top` | Operative temperature, °C | Equals air temperature here (MRT = Ta) |
+| `RH` | Relative humidity, % | Two levels: 50 and 70 |
+| `Sex` | F / M | 15 subjects each |
+| `Subject` | Subject ID, 1–30 | Each ID appears 7 times|
+| `TS` | Thermal sensation | ASHRAE scale, −4 cold … 0 neutral … +4 hot |
+| `TC` | Thermal discomfort | 0 = very comfortable … 4 = very uncomfortable |
+| `TA` | Thermal acceptability | Higher = more acceptable |
+| `PMV` | Predicted mean vote | Calculated from the design conditions |
+| `PPD` | Predicted % dissatisfied | Calculated from PMV |
+| `Experiment` | Condition A–F, plus P | P is pre-conditioning, not a test condition |
+
+```{r orient}
+str(d)
+```
+
+
+## 1. Statistical summary of all variables
+
+```{r q1}
+#  Summarise every variable.
+summary(d)
+
+# Think: does a mean make sense for a factor? For a design variable like Top?
+```
+
+**Interpretation.** [WRITE 2–3 SENTENCES. What would you put in a paper?]
+The dataset contains `r nrow(d)` observations from
+`r n_distinct(d$Subject)` subjects across `r n_distinct(d$Experiment)`
+experimental conditions. The sample includes
+`r n_distinct(d$Subject[d$Sex == "F"])` female and
+`r n_distinct(d$Subject[d$Sex == "M"])` male subjects. Operative temperature
+ranges from `r min(d$Top)` to `r max(d$Top)` °C, and thermal sensation ranges
+from `r min(d$TS)` to `r max(d$TS)`.
+
+## 2. Histograms of TC and TS
+
+```{r q2}
+qplot(TC, data=arch241a2, geom="histogram", binwidth=0.25) +
+  xlab("Thermal comfort (TC)") +
+  ylab("Count") +
+  theme_bw()
+
+qplot(TS, data=arch241a2, geom="histogram", binwidth=0.25) +
+  xlab("Thermal sensation (TS)") +
+  ylab("Count") +
+  theme_bw()
+```
+
+**Interpretation.** [WRITE 2–3 SENTENCES]
+TS appears roughly symmetric, while
+TC looks not symmetric distribution. 
+This suggests that TS is closer to a
+normal distribution than TC.
+
+
+## 3. Boxplots of TS vs Sex, Subject and Experiment
+
+```{r q3}
+# [WRITE YOUR CODE] Three plots.
+qplot(Sex, TS, data=arch241a2, geom="boxplot") +
+  xlab("Sex") +
+  ylab("Thermal sensation (TS)") +
+  theme_bw()
+
+qplot(Subject, TS, data=arch241a2, geom="boxplot") +
+  xlab("Subject") +
+  ylab("Thermal sensation (TS)") +
+  theme_bw()
+
+qplot(Experiment, TS, data=arch241a2, geom="boxplot") +
+  xlab("Experiment") +
+  ylab("Thermal sensation (TS)") +
+  theme_bw()
+# The Subject one is the least obvious and the most informative — look at it carefully.
+```
+
+**Interpretation.** [WRITE 2–3 SENTENCES]
+TS difference is almost same between female and male.
+Almost all TS scatters around 0 for all subject, but not sure if there is a
+significant difference.
+TS looks different among each experiment condition.
+
+## 4. Correlation matrix
+
+Variables: PMV, PPD, RH, TA, TC, TS, Top.
+
+```{r q4}
+# [WRITE YOUR CODE]
+corrTab <- cor(
+  arch241a2[,c("PMV","PPD","RH","TA","TC","Top","TS")],
+  use="complete",
+  method="pearson"
+)
+
+round(corrTab,2)
+
+library('GGally')
+
+ggcorr(
+  arch241a2[,c("PMV","PPD","RH","TA","TC","Top","TS")],
+  label=TRUE
+)
+
+# Top vs PMV
+ggplot(
+  distinct(arch241a2, Top, PMV),
+  aes(x=Top, y=PMV)
+) +
+  geom_point() +
+  geom_smooth(method="lm", se=FALSE) +
+  theme_bw()
+
+# PMV vs PPD
+ggplot(
+  distinct(arch241a2, PMV, PPD),
+  aes(x=PMV, y=PPD)
+) +
+  geom_point() +
+  geom_line() +
+  theme_bw()
+
+
+```
+
+**Interpretation.** [WRITE 2–3 SENTENCES]
+TS is strongly positively correlated with Top
+(r = `r round(corrTab["TS","Top"],2)`) and PMV
+(r = `r round(corrTab["TS","PMV"],2)`).
+TC and TA are strongly negatively
+correlated (r = `r round(corrTab["TC","TA"],2)`). 
+
+
+Top and PMV are almost perfectly correlated because PMV was calculated 
+from the experimental thermal conditions. 
+In contrast, PMV and PPD are deterministically related but their
+correlation is only `r round(corrTab["PMV","PPD"],2)` because their
+relationship is nonlinear (U curve) rather than linear.
+
+## 5. Normality of TC and TS
+
+```{r q5}
+# [WRITE YOUR CODE] A test AND a plot. Do not rely on the p-value alone.
+shapiro.test(arch241a2$TC)
+qqnorm(arch241a2$TC, main="TC")
+qqline(arch241a2$TC)
+
+
+shapiro.test(arch241a2$TS)
+qqnorm(arch241a2$TS, main="TS")
+qqline(arch241a2$TS)
+```
+
+**Interpretation.** [WRITE 2–3 SENTENCES. Are they normal? Does it matter, and for what?]
+TC significantly deviates from a normal distribution
+(p = `r signif(shapiro.test(arch241a2$TC)$p.value, 3)`), and its Q-Q plot also
+shows deviations from the reference line. 
+In contrast, normality is not
+rejected for TS (p = `r round(shapiro.test(arch241a2$TS)$p.value, 2)`).
+Non-normality does not matter, but it will matter if TC is used in statistical test that
+assume normality. 
+
+## 6. Does Sex significantly influence TS?
+
+```{r q6}
+# [WRITE YOUR CODE]
+# Then answer this, in your text: Sex is a property of a SUBJECT, and you have
+# 30 subjects but 210 rows. What is your real sample size, and what does using
+# 210 do to your p-value?
+# Try at least two approaches and report whether they agree.
+
+# Approach1: using 210 observations
+t.test(
+  TS ~ Sex,
+  alternative='two.sided',
+  conf.level=.99,
+  var.equal=FALSE,
+  data=arch241a2
+)
+
+# Approach 2: using the mean TS of 30 subjects
+t.test(
+  TS ~ Sex,
+  alternative='two.sided',
+  conf.level=.99,
+  var.equal=FALSE,
+  data=summarise(
+    group_by(arch241a2, Subject, Sex),
+    TS=mean(TS)
+  )
+)
+```
+
+**Interpretation.** [WRITE 2–3 SENTENCES]
+Sex is a characteristic of the subject, so the real
+independent sample size is `r n_distinct(arch241a2$Subject)`, not
+`r nrow(arch241a2)` observations.  
+Treating all observations as independent could ignore the 
+repeated measurements within each subject.
+
+Both approaches show no statistically
+significant difference in TS between F and M.
+
+
+## 7. Linear regression: TS as a function of Top
+
+```{r q7}
+# [WRITE YOUR CODE] Fit the model, then TEST ITS VALIDITY.
+# The four assumptions: linearity, constant variance, normal residuals,
+# independent observations. Check all four and say which ones hold.
+
+
+lmTSTop <- lm(TS ~ Top, data=arch241a2)
+summary(lmTSTop)
+
+# Diagnostic plots
+par(mfrow=c(2,2))
+plot(lmTSTop)
+par(mfrow=c(1,1))
+
+# Normality of residuals
+shapiro.test(residuals(lmTSTop))
+
+# Regression plot
+LinMod <- ggplot(
+  arch241a2,
+  aes(x=Top, y=TS)
+) +
+  geom_point() +
+  theme_bw() +
+  xlab("Operative temperature, Top [°C]") +
+  ylab("Thermal sensation, TS")
+
+print(LinMod + geom_smooth(method="lm"))
+
+```
+
+**Interpretation.** [WRITE 2–3 SENTENCES. Report the slope with units, the R²,
+and the neutral temperature — the Top at which predicted TS = 0. Compare it to
+what PMV predicts.]
+
+Linearity, constant-variance and normal residuals appears reasonably appropriate.
+Independence is not satisfied because each subject was measured repeatedly 
+across seven conditions.
+
+
+The slope is `r round(coef(lmTSTop)["Top"],3)` with units for each 1 °C increase
+in Top.
+The regression model explained
+`r round(summary(lmTSTop)$r.squared*100,1)`% of the variation in TS.
+
+The predicted neutral temperature was
+`r round(-coef(lmTSTop)["(Intercept)"]/coef(lmTSTop)["Top"],1)` °C.
+
+In PMV, it is
+`r round(-coef(lm(PMV ~ Top, data=arch241a2))["(Intercept)"] /
+coef(lm(PMV ~ Top, data=arch241a2))["Top"],1)` °C.
+
+## 8. Your own research question
+
+**Question:** [WRITE YOUR QUESTION]
+Does experimental condition have a significant influence on thermal sensation?
+
+```{r q8}
+# [WRITE YOUR CODE]
+
+AnovaTSExperiment <- aov(TS ~ Experiment, data=arch241a2)
+summary(AnovaTSExperiment)
+
+by_Experiment <- group_by(arch241a2, Experiment)
+summarise(by_Experiment,
+          count = n(),
+          mean(TS),
+          sd(TS))
+```
+
+**Interpretation.** [WRITE 2–3 SENTENCES — the take-away message you would put
+in a paper.]
+Thermal sensation differed significantly among experimental
+conditions. 
+Mean TS ranged from
+`r round(mean(arch241a2$TS[arch241a2$Experiment=="A"]),2)` in condition A to
+`r round(mean(arch241a2$TS[arch241a2$Experiment=="F"]),2)` in condition F,
+showing a clear shift from cooler to warmer thermal sensations across conditions.
+
+
+## Session information
+
+```{r session}
+sessionInfo()
+```
